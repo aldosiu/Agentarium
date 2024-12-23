@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import re
 import json
-import openai
+import aisuite as ai
 
 from typing import List
 from faker import Faker
 from .Interaction import Interaction
 from .AgentInteractionManager import AgentInteractionManager
+from .Config import Config
 
 
 faker = Faker()
-openai_client = openai.OpenAI()
+config = Config()
+llm_client = ai.Client({**config.aisuite})
 
 
 class Agent:
@@ -174,8 +176,8 @@ Write in the following format:
         """
         prompt = Agent.generate_prompt_to_generate_bio(**agent_informations)
 
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = llm_client.chat.completions.create(
+            model=f"{config.llm_provider}:{config.llm_model}",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt},
@@ -206,8 +208,8 @@ Write in the following format:
             interactions=self.get_interactions(),
         )
 
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = llm_client.chat.completions.create(
+            model=f"{config.llm_provider}:{config.llm_model}",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt},
