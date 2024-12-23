@@ -22,7 +22,7 @@ class Config:
     Example config.yaml:
         llm:
           provider: "openai"
-          model: "gpt-4-mini"
+          model: "gpt-4o-mini"
     """
 
     _instance = None
@@ -117,7 +117,7 @@ class Config:
         Get the configured LLM model.
 
         Returns:
-            str: The name of the specific model to use (e.g., "gpt-4-mini")
+            str: The name of the specific model to use (e.g., "gpt-4o-mini")
         """
         return self._config["llm"]["model"]
 
