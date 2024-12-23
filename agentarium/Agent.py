@@ -9,6 +9,7 @@ from faker import Faker
 from .Interaction import Interaction
 from .AgentInteractionManager import AgentInteractionManager
 from .Config import Config
+from .utils import cache_w_checkpoint_manager
 
 
 faker = Faker()
@@ -40,6 +41,7 @@ class Agent:
     """
 
     _interaction_manager = AgentInteractionManager()
+    _allow_init = False
 
     _default_generate_agent_prompt = """You're goal is to generate the bio of a fictional person.
 Make this bio as realistic and as detailed as possible.
@@ -76,25 +78,12 @@ Write in the following format:
     def __init__(self, **kwargs):
         """
         Initialize an agent with given or generated characteristics.
-
-        Creates a new agent instance with a unique identifier and a set of
-        characteristics. If specific characteristics are not provided, they
-        are automatically generated to create a complete and realistic agent
-        profile.
-
-        The following characteristics are handled:
-        - Gender (male/female)
-        - Name (appropriate for the gender)
-        - Age (between 18 and 80)
-        - Occupation (randomly selected job)
-        - Location (randomly selected city)
-        - Bio (generated based on other characteristics)
-
-        Args:
-            **kwargs: Dictionary of agent characteristics to use instead of
-                generating them. Any characteristic not provided will be
-                automatically generated.
+        This method should not be called directly - use create_agent() instead.
         """
+
+        if not Agent._allow_init:
+            raise RuntimeError("Agent instances should be created using Agent.create_agent()")
+
         self.agent_id = kwargs.get("agent_id", faker.uuid4())
         self.agent_informations: dict = kwargs or {}
 
@@ -114,9 +103,39 @@ Write in the following format:
             self.agent_informations["location"] = faker.city()
 
         if "bio" not in kwargs:
-            self.agent_informations["bio"] = Agent.generate_agent_bio(self.agent_informations)
+            self.agent_informations["bio"] = Agent._generate_agent_bio(self.agent_informations)
 
         self._interaction_manager.register_agent(self)
+
+    @staticmethod
+    @cache_w_checkpoint_manager
+    def create_agent(**kwargs) -> Agent:
+        """
+        Initialize an agent with given or generated characteristics.
+
+        Creates a new agent instance with a unique identifier and a set of
+        characteristics. If specific characteristics are not provided, they
+        are automatically generated to create a complete and realistic agent
+        profile.
+
+        The following characteristics are handled:
+        - Gender (male/female)
+        - Name (appropriate for the gender)
+        - Age (between 18 and 80)
+        - Occupation (randomly selected job)
+        - Location (randomly selected city)
+        - Bio (generated based on other characteristics)
+
+        Args:
+            **kwargs: Dictionary of agent characteristics to use instead of
+                generating them. Any characteristic not provided will be
+                automatically generated.
+        """
+        try:
+            Agent._allow_init = True
+            return Agent(**kwargs)
+        finally:
+            Agent._allow_init = False
 
     @property
     def name(self) -> str:
@@ -129,7 +148,7 @@ Write in the following format:
         return self.agent_informations["name"]
 
     @staticmethod
-    def generate_prompt_to_generate_bio(**kwargs) -> str:
+    def _generate_prompt_to_generate_bio(**kwargs) -> str:
         """
         Generate a prompt for creating an agent's biography.
 
@@ -159,7 +178,7 @@ Write in the following format:
         return prompt
 
     @staticmethod
-    def generate_agent_bio(agent_informations: dict) -> str:
+    def _generate_agent_bio(agent_informations: dict) -> str:
         """
         Generate a biography for an agent using a language model.
 
@@ -174,7 +193,7 @@ Write in the following format:
         Returns:
             str: A generated biography for the agent.
         """
-        prompt = Agent.generate_prompt_to_generate_bio(**agent_informations)
+        prompt = Agent._generate_prompt_to_generate_bio(**agent_informations)
 
         response = llm_client.chat.completions.create(
             model=f"{config.llm_provider}:{config.llm_model}",
@@ -187,6 +206,7 @@ Write in the following format:
 
         return response.choices[0].message.content
 
+    @cache_w_checkpoint_manager
     def act(self) -> str:
         """
         Generate and execute the agent's next action.
@@ -203,6 +223,7 @@ Write in the following format:
             RuntimeError: If the action format is invalid or if the target
                 agent for a TALK action is not found.
         """
+
         prompt = Agent._default_act_prompt.format(
             agent_informations=self.agent_informations,
             interactions=self.get_interactions(),
@@ -238,46 +259,16 @@ Write in the following format:
 
         return response.choices[0].message.content
 
-    def save(self, path: str, with_interactions: bool = False) -> None:
+    def dump(self) -> dict:
         """
-        Save the agent's state to a file.
-
-        Serializes the agent's characteristics and optionally their interaction
-        history to a JSON file.
-
-        Args:
-            path (str): The file path where the agent state should be saved.
-            with_interactions (bool, optional): Whether to include the agent's
-                interaction history. Defaults to False.
+        Dump the agent's state to a dictionary.
         """
-        to_save = {
+
+        return {
+            "agent_id": self.agent_id,
             "agent_informations": self.agent_informations,
-            "interactions": [i.__dict__ for i in self.get_interactions()] if with_interactions else None,
+            "interactions": [interaction.dump() for interaction in self._interaction_manager._agent_private_interactions[self.agent_id]],
         }
-
-        with open(path, "w") as file:
-            json.dump(to_save, file)
-
-    def load(self, path: str, with_interactions: bool = False) -> None:
-        """
-        Load an agent's state from a file.
-
-        Deserializes the agent's characteristics and optionally their
-        interaction history from a JSON file.
-
-        Args:
-            path (str): The file path to load the agent state from.
-            with_interactions (bool, optional): Whether to load the agent's
-                interaction history. Defaults to False.
-        """
-        with open(path, "r") as file:
-            data = json.load(file)
-
-        self.agent_informations = data["agent_informations"]
-        if with_interactions and data["interactions"] is not None:
-            self.interactions = [Interaction(**i) for i in data["interactions"]]
-        else:
-            self.interactions = []
 
     def __str__(self) -> str:
         """
@@ -307,6 +298,7 @@ Write in the following format:
         """
         return self._interaction_manager.get_agent_interactions(self)
 
+    @cache_w_checkpoint_manager
     def talk_to(self, receiver: Agent, message: str) -> None:
         """
         Send a message to another agent.

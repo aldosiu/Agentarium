@@ -12,22 +12,22 @@ if TYPE_CHECKING:
 class AgentInteractionManager:
     """
     A singleton class that manages all interactions between agents in the environment.
-    
+
     This class is responsible for:
     - Keeping track of all registered agents
     - Recording and storing interactions between agents
     - Providing access to interaction history for both individual agents and the entire system
-    
+
     The manager implements the Singleton pattern to ensure a single source of truth
     for all agent interactions across the environment.
     """
-    
+
     _instance = None
 
     def __new__(cls):
         """
         Implements the singleton pattern to ensure only one instance exists.
-        
+
         Returns:
             AgentInteractionManager: The single instance of the manager.
         """
@@ -39,7 +39,7 @@ class AgentInteractionManager:
     def __init__(self):
         """
         Initializes the interaction manager if not already initialized.
-        
+
         Due to the singleton pattern, this will only execute once, even if
         multiple instances are created.
         """
@@ -52,10 +52,10 @@ class AgentInteractionManager:
     def register_agent(self, agent: Agent) -> None:
         """
         Register a new agent with the interaction manager.
-        
+
         This method adds the agent to the manager's registry and initializes
         their private interaction history.
-        
+
         Args:
             agent (Agent): The agent to register with the manager.
         """
