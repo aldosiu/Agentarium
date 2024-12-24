@@ -102,7 +102,10 @@ Write in the following format:
         if not Agent._allow_init:
             raise RuntimeError("Agent instances should be created using Agent.create_agent()")
 
-        self.agent_id = kwargs.get("agent_id") if "agent_id" in kwargs and kwargs["agent_id"] != DefaultValue.NOT_PROVIDED else faker.uuid4()
+        if "agent_id" in kwargs:
+            self.agent_id = kwargs.pop("agent_id")
+
+        self.agent_id = self.agent_id if self.agent_id!= DefaultValue.NOT_PROVIDED else faker.uuid4()
         self.agent_informations: dict = kwargs or {}
 
         if "gender" not in kwargs or kwargs["gender"] == DefaultValue.NOT_PROVIDED:
