@@ -5,6 +5,7 @@ import logging
 import aisuite as ai
 
 from enum import Enum
+from copy import deepcopy
 from typing import List, Callable
 from faker import Faker
 from .Interaction import Interaction
@@ -123,9 +124,9 @@ Write in the following format:
             self.agent_informations["bio"] = Agent._generate_agent_bio(self.agent_informations)
 
         self._interaction_manager.register_agent(self)
-        self._act_prompt = Agent._default_act_prompt
+        self._act_prompt = deepcopy(Agent._default_act_prompt)
 
-        self._actions = Agent._default_actions
+        self._actions = deepcopy(Agent._default_actions)
         self._actions["TALK"]["function"] = self._talk_action_function
         self._actions["THINK"]["function"] = self._think_action_function
 
@@ -271,7 +272,6 @@ Write in the following format:
         response = llm_client.chat.completions.create(
             model=f"{config.llm_provider}:{config.llm_model}",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.4,
@@ -282,19 +282,6 @@ Write in the following format:
 
         if actions[0] in self._actions:
             return self._actions[actions[0]]["function"](*actions[1:])
-
-        # if actions[0] == "TALK":
-        #     if len(actions) < 3:
-        #         raise RuntimeError(f"Received a TALK action with less than 3 arguments: {actions}")
-
-        #     if (receiver := self._interaction_manager.get_agent(actions[1])) is None:
-        #         raise RuntimeError(f"Received a TALK action with an invalid agent ID: {actions[1]}")
-
-        #     return self.talk_to(receiver, actions[2])
-
-        # elif actions[0] == "THINK":
-        #     # NOTE: This is a self-interaction, but maybe we should add a way to handle self-thinking.
-        #     return self._interaction_manager.record_interaction(self, self, actions[1])
 
         raise RuntimeError(f"Invalid action: '{actions[0]}'. Received output: {response.choices[0].message.content}")
 
@@ -504,6 +491,13 @@ Write in the following format:
 
         self._actions[name] = action_descriptor
         self._actions[name]["function"] = standardize_action_output(action_function)
+
+    def reset(self) -> None:
+        """
+        Reset the agent's state.
+        """
+        self._interaction_manager.reset_agent(self)
+        self.storage = {}
 
 
 if __name__ == "__main__":

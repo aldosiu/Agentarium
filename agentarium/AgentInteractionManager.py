@@ -60,6 +60,12 @@ class AgentInteractionManager:
         self._agents[agent.agent_id] = agent
         self._agent_private_interactions[agent.agent_id] = []
 
+    def reset_agent(self, agent: Agent) -> None:
+        """
+        Reset the agent's state.
+        """
+        self._agent_private_interactions[agent.agent_id] = []
+
     def get_agent(self, agent_id: str) -> Agent | None:
         """
         Retrieve an agent by their ID.
