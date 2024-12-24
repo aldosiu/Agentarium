@@ -85,11 +85,11 @@ The following are the possible actions you can take:
 
 Write in the following format:
 <THINK>
-[YOUR_THOUGHTS]
+{{YOUR_THOUGHTS}}
 </THINK>
 
 <ACTION>
-[One of the following actions: {list_of_actions}]
+[{{One of the following actions: {list_of_actions}}}]
 </ACTION>
 """
 
