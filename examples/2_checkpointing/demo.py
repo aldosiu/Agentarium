@@ -1,4 +1,4 @@
-from agentarium.agent import Agent
+from agentarium import Agent
 from agentarium.CheckpointManager import CheckpointManager
 
 

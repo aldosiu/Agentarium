@@ -83,7 +83,7 @@ class CheckpointManager:
         Load a simulation from a checkpoint.
         """
 
-        from agentarium.agent import Agent
+        from agentarium import Agent
         env_data = pickle.load(open(self.path, "rb"))
 
         self._state = OrderedDict(env_data["state"])
