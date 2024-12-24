@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import re
-import json
+import logging
 import aisuite as ai
 
-from typing import List
+from enum import Enum
+from typing import List, Callable
 from faker import Faker
 from .Interaction import Interaction
 from .AgentInteractionManager import AgentInteractionManager
 from .Config import Config
 from .utils import cache_w_checkpoint_manager
+
+
+class DefaultValue(Enum):
+    NOT_PROVIDED = "NOT_PROVIDED"
 
 
 faker = Faker()
@@ -52,6 +57,19 @@ You must generate the bio in the following format:
 Bio: [Bio of the person]
 """
 
+    _default_actions = {
+        "THINK": {
+            "format": "[THINK][CONTENT]",
+            "prompt": "Think about something.",
+            "example": "[THINK][It's such a beautiful day!]",
+        },
+        "TALK": {
+            "format": "[TALK][AGENT_ID][CONTENT]",
+            "prompt": "Talk to the agent with the given ID. Note that you must the agent ID, not the agent name.",
+            "example": "[TALK][123][Hello!]",
+        },
+    }
+
     _default_act_prompt = """
 Informations about yourself:
 {agent_informations}
@@ -62,8 +80,7 @@ Your interactions:
 Given the above information, think about what you should do next.
 
 The following are the possible actions you can take:
-[THINK][CONTENT]: Think about something. (i.e [THINK][It's such a beautiful day!])
-[TALK][AGENT_ID][CONTENT]: Talk to the agent with the given ID. Note that you must the agent ID, not the agent name. (i.e [TALK][123][Hello!])
+{actions}
 
 Write in the following format:
 <THINK>
@@ -71,7 +88,7 @@ Write in the following format:
 </THINK>
 
 <ACTION>
-[YOUR_NEXT_ACTION: One of the following actions: THINK, TALK]
+[YOUR_NEXT_ACTION: One of the following actions: {list_of_actions}]
 </ACTION>
 """
 
@@ -84,32 +101,48 @@ Write in the following format:
         if not Agent._allow_init:
             raise RuntimeError("Agent instances should be created using Agent.create_agent()")
 
-        self.agent_id = kwargs.get("agent_id", faker.uuid4())
+        self.agent_id = kwargs.get("agent_id") if "agent_id" in kwargs and kwargs["agent_id"] != DefaultValue.NOT_PROVIDED else faker.uuid4()
         self.agent_informations: dict = kwargs or {}
 
-        if "gender" not in kwargs:
+        if "gender" not in kwargs or kwargs["gender"] == DefaultValue.NOT_PROVIDED:
             self.agent_informations["gender"] = faker.random_element(elements=["male", "female"])
 
-        if "name" not in kwargs:
+        if "name" not in kwargs or kwargs["name"] == DefaultValue.NOT_PROVIDED:
             self.agent_informations["name"] = getattr(faker, f"name_{self.agent_informations['gender']}")()
 
-        if "age" not in kwargs:
+        if "age" not in kwargs or kwargs["age"] == DefaultValue.NOT_PROVIDED:
             self.agent_informations["age"] = faker.random_int(18, 80)
 
-        if "occupation" not in kwargs:
+        if "occupation" not in kwargs or kwargs["occupation"] == DefaultValue.NOT_PROVIDED:
             self.agent_informations["occupation"] = faker.job()
 
-        if "location" not in kwargs:
+        if "location" not in kwargs or kwargs["location"] == DefaultValue.NOT_PROVIDED:
             self.agent_informations["location"] = faker.city()
 
-        if "bio" not in kwargs:
+        if "bio" not in kwargs or kwargs["bio"] == DefaultValue.NOT_PROVIDED:
             self.agent_informations["bio"] = Agent._generate_agent_bio(self.agent_informations)
 
         self._interaction_manager.register_agent(self)
+        self._act_prompt = Agent._default_act_prompt
+
+        self._actions = Agent._default_actions
+        self._actions["TALK"]["function"] = self._talk_action_function
+        self._actions["THINK"]["function"] = self._think_action_function
+
+        self.storage = {}  # Useful for storing data between actions. Note: not used by the agentarium system.
 
     @staticmethod
     @cache_w_checkpoint_manager
-    def create_agent(**kwargs) -> Agent:
+    def create_agent(
+        agent_id: str = DefaultValue.NOT_PROVIDED,
+        gender: str = DefaultValue.NOT_PROVIDED,
+        name: str = DefaultValue.NOT_PROVIDED,
+        age: int = DefaultValue.NOT_PROVIDED,
+        occupation: str = DefaultValue.NOT_PROVIDED,
+        location: str = DefaultValue.NOT_PROVIDED,
+        bio: str = DefaultValue.NOT_PROVIDED,
+        **kwargs,
+    ) -> Agent:
         """
         Initialize an agent with given or generated characteristics.
 
@@ -133,7 +166,7 @@ Write in the following format:
         """
         try:
             Agent._allow_init = True
-            return Agent(**kwargs)
+            return Agent(agent_id=agent_id, gender=gender, name=name, age=age, occupation=occupation, location=location, bio=bio, **kwargs)
         finally:
             Agent._allow_init = False
 
@@ -224,9 +257,15 @@ Write in the following format:
                 agent for a TALK action is not found.
         """
 
-        prompt = Agent._default_act_prompt.format(
+        # [THINK][CONTENT]: Think about something. (i.e [THINK][It's such a beautiful day!])
+        # [TALK][AGENT_ID][CONTENT]: Talk to the agent with the given ID. Note that you must the agent ID, not the agent name. (i.e [TALK][123][Hello!])
+        # [CHATGPT][CONTENT]: Use ChatGPT. (i.e [CHATGPT][Hello!])
+
+        prompt = self._act_prompt.format(
             agent_informations=self.agent_informations,
             interactions=self.get_interactions(),
+            actions="\n".join([f"{action['format']}: {action['prompt']} (i.e {action['example']})" for action in self._actions.values()]),
+            list_of_actions=list(self._actions.keys()),
         )
 
         response = llm_client.chat.completions.create(
@@ -241,23 +280,23 @@ Write in the following format:
         actions = re.search(r"<ACTION>(.*?)</ACTION>", response.choices[0].message.content, re.DOTALL).group(1).strip().split("]")
         actions = [action.replace("[", "").replace("]", "").strip() for action in actions]
 
-        if actions[0] == "TALK":
-            if len(actions) < 3:
-                raise RuntimeError(f"Received a TALK action with less than 3 arguments: {actions}")
+        if actions[0] in self._actions:
+            return self._actions[actions[0]]["function"](*actions[1:])
 
-            if (receiver := self._interaction_manager.get_agent(actions[1])) is None:
-                raise RuntimeError(f"Received a TALK action with an invalid agent ID: {actions[1]}")
+        # if actions[0] == "TALK":
+        #     if len(actions) < 3:
+        #         raise RuntimeError(f"Received a TALK action with less than 3 arguments: {actions}")
 
-            self.talk_to(receiver, actions[2])
+        #     if (receiver := self._interaction_manager.get_agent(actions[1])) is None:
+        #         raise RuntimeError(f"Received a TALK action with an invalid agent ID: {actions[1]}")
 
-        elif actions[0] == "THINK":
-            # NOTE: This is a self-interaction, but maybe we should add a way to handle self-thinking.
-            self._interaction_manager.record_interaction(self, self, actions[1])
+        #     return self.talk_to(receiver, actions[2])
 
-        else:
-            raise RuntimeError(f"Invalid action: {actions[0]}")
+        # elif actions[0] == "THINK":
+        #     # NOTE: This is a self-interaction, but maybe we should add a way to handle self-thinking.
+        #     return self._interaction_manager.record_interaction(self, self, actions[1])
 
-        return response.choices[0].message.content
+        raise RuntimeError(f"Invalid action: '{actions[0]}'. Received output: {response.choices[0].message.content}")
 
     def dump(self) -> dict:
         """
@@ -298,6 +337,18 @@ Write in the following format:
         """
         return self._interaction_manager.get_agent_interactions(self)
 
+    def _talk_action_function(self, *params) -> None:
+        """
+        Send a message to another agent.
+        """
+        if len(params) < 2:
+            raise RuntimeError(f"Received a TALK action with less than 2 arguments: {params}")
+
+        if (receiver := self._interaction_manager.get_agent(params[0])) is None:
+            raise RuntimeError(f"Received a TALK action with an invalid agent ID: {params[0]}")
+
+        return self.talk_to(receiver, params[1])
+
     @cache_w_checkpoint_manager
     def talk_to(self, receiver: Agent, message: str) -> None:
         """
@@ -309,7 +360,150 @@ Write in the following format:
             receiver (Agent): The agent to send the message to.
             message (str): The content of the message to send.
         """
+
         self._interaction_manager.record_interaction(self, receiver, message)
+
+        return {
+            "action": "TALK",
+            "sender": self.agent_id,
+            "receiver": receiver.agent_id,
+            "message": message,
+        }
+
+    def _think_action_function(self, *params) -> None:
+        """
+        Think about a message.
+        """
+        if len(params) < 1:
+            raise RuntimeError(f"Received a THINK action with less than 1 argument: {params}")
+
+        return self.think(params[0])
+
+    @cache_w_checkpoint_manager
+    def think(self, message: str) -> None:
+        """
+        Think about a message.
+
+        Records an interaction where this agent thinks about a message.
+
+        Args:
+            message (str): The content of the message to think about.
+        """
+
+        self._interaction_manager.record_interaction(self, self, message)
+
+        return {
+            "action": "THINK",
+            "sender": self.agent_id,
+            "receiver": self.agent_id,
+            "message": message,
+        }
+
+    def add_new_action(self, action_descriptor: dict[str, str], action_function: Callable[[Agent, str], str | dict]) -> None:
+        """
+        Add a new action to the agent's capabilities.
+
+        This method allows extending an agent's behavior by adding custom actions. Each action consists of:
+        1. A descriptor that tells the agent how to use the action
+        2. A function that implements the action's behavior
+
+        Args:
+            action_descriptor (dict[str, str]): A dictionary describing the action with these required keys:
+                - "format": Format string showing action syntax. Must start with [ACTION_NAME] in caps,
+                           followed by parameter placeholders in brackets. Example: "[CHATGPT][message]"
+                - "prompt": Human-readable description of what the action does
+                - "example": Concrete example showing how to use the action
+            action_function (Callable[[Agent, str], str | dict]): Function implementing the action.
+                - First parameter must be the agent instance
+                - Remaining parameters should match the format string
+                - Can return either a string or a dictionary
+                - If returning a dict, the 'action' key is reserved and will be overwritten
+                - If returning a non-dict value, it will be stored under the 'output' key
+
+        Raises:
+            RuntimeError: If the action_descriptor is missing required keys or if the action
+                         name conflicts with an existing action
+
+        Example:
+            ```python
+            # Adding a ChatGPT integration action
+            agent.add_new_action(
+                action_descriptor={
+                    "format": "[CHATGPT][Your message here]",
+                    "prompt": "Use ChatGPT to have a conversation or ask questions.",
+                    "example": "[CHATGPT][What's the weather like today?]"
+                },
+                action_function=use_chatgpt
+            )
+
+            # The action function could look like:
+            def use_chatgpt(agent: Agent, message: str) -> dict:
+                response = call_chatgpt_api(message)
+                return {
+                    "message": message,
+                    "response": response
+                }  # Will be automatically formatted to include "action": "CHATGPT"
+            ```
+
+        Notes:
+            - The action name is extracted from the first bracket pair in the format string
+            - The action function's output will be automatically standardized to include the action name
+            - Any 'action' key in the function's output dictionary will be overwritten
+        """
+
+        if "format" not in action_descriptor:
+            raise RuntimeError(f"Invalid action: {action_descriptor}, missing 'format'")
+
+        name = action_descriptor["format"].split("[")[1].split("]")[0]
+
+        if len(name) < 1:
+            raise RuntimeError(f"Invalid action format: {action_descriptor['format']}, first name must be a single word")
+
+        if name in self._actions:
+            raise RuntimeError(f"Action {action_descriptor} already exists")
+
+        if "prompt" not in action_descriptor:
+            raise RuntimeError(f"Invalid action: {action_descriptor}, missing 'prompt'")
+
+        if "example" not in action_descriptor:
+            raise RuntimeError(f"Invalid action: {action_descriptor}, missing 'example'")
+
+        def standardize_action_output(fun):
+            """
+            Standardizes the output format of action functions.
+
+            This decorator ensures that all action functions return a dictionary with a
+            consistent format, containing at minimum an 'action' key with the action name.
+            If the original function returns a dictionary, its contents are preserved
+            (except for the 'action' key which may be overwritten). If it returns a
+            non-dictionary value, it is stored under the 'output' key.
+
+            Args:
+                fun (Callable): The action function to decorate.
+
+            Returns:
+                Callable: A wrapped function that standardizes the output format.
+            """
+
+            def wrapper(*args, **kwargs):
+                fn_output = fun(self, *args, **kwargs)
+
+                output = fn_output if type(fn_output) == dict else {"output": fn_output}
+
+                if "action" in output:
+                    logging.warning((
+                        f"The action '{name}' returned an output with an 'action' key. "
+                        "This is not allowed, it will be overwritten."
+                    ))
+
+                output["action"] = name
+
+                return output
+
+            return wrapper
+
+        self._actions[name] = action_descriptor
+        self._actions[name]["function"] = standardize_action_output(action_function)
 
 
 if __name__ == "__main__":
