@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Dict, List, TYPE_CHECKING
 from .Interaction import Interaction
 
-from faker import Faker
-
 if TYPE_CHECKING:
     from .Agent import Agent
 
@@ -65,10 +63,10 @@ class AgentInteractionManager:
     def get_agent(self, agent_id: str) -> Agent | None:
         """
         Retrieve an agent by their ID.
-        
+
         Args:
             agent_id (str): The unique identifier of the agent.
-            
+
         Returns:
             Agent | None: The requested agent if found, None otherwise.
         """
@@ -77,10 +75,10 @@ class AgentInteractionManager:
     def record_interaction(self, sender: Agent, receiver: Agent, message: str) -> None:
         """
         Record a new interaction between two agents.
-        
+
         This method creates a new Interaction object and stores it in both the global
         interaction history and the private interaction histories of both involved agents.
-        
+
         Args:
             sender (Agent): The agent initiating the interaction.
             receiver (Agent): The agent receiving the interaction.
@@ -98,9 +96,9 @@ class AgentInteractionManager:
     def get_all_interactions(self) -> List[Interaction]:
         """
         Retrieve the complete history of all interactions in the environment.
-        
+
         This method is primarily used for administrative and debugging purposes.
-        
+
         Returns:
             List[Interaction]: A list of all interactions that have occurred.
         """
@@ -109,13 +107,13 @@ class AgentInteractionManager:
     def get_agent_interactions(self, agent: Agent) -> List[Interaction]:
         """
         Retrieve all interactions involving a specific agent.
-        
+
         This includes both interactions where the agent was the sender
         and where they were the receiver.
-        
+
         Args:
             agent (Agent): The agent whose interactions to retrieve.
-            
+
         Returns:
             List[Interaction]: A list of all interactions involving the agent.
         """
