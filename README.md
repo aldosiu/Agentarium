@@ -93,7 +93,7 @@ Configure your environment using YAML files:
 ```yaml
 llm:
   provider: "openai" # any provider supported by aisuite
-  model: "gpt-4-mini" # any model supported by the provider
+  model: "gpt-4o-mini" # any model supported by the provider
 
 aisuite: # optional, credentials for aisuite
   openai:
