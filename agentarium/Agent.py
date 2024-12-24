@@ -89,7 +89,7 @@ Write in the following format:
 </THINK>
 
 <ACTION>
-[YOUR_NEXT_ACTION: One of the following actions: {list_of_actions}]
+[One of the following actions: {list_of_actions}]
 </ACTION>
 """
 
@@ -332,7 +332,7 @@ Write in the following format:
             raise RuntimeError(f"Received a TALK action with less than 2 arguments: {params}")
 
         if (receiver := self._interaction_manager.get_agent(params[0])) is None:
-            raise RuntimeError(f"Received a TALK action with an invalid agent ID: {params[0]}")
+            raise RuntimeError(f"Received a TALK action with an invalid agent ID: {params[0]}. {params=}")
 
         return self.talk_to(receiver, params[1])
 
