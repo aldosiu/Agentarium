@@ -97,7 +97,9 @@ class AgentInteractionManager:
 
         # Record in private interactions for both sender and receiver
         self._agent_private_interactions[sender.agent_id].append(interaction)
-        self._agent_private_interactions[receiver.agent_id].append(interaction)
+
+        if receiver.agent_id != sender.agent_id:
+            self._agent_private_interactions[receiver.agent_id].append(interaction)
 
     def get_all_interactions(self) -> List[Interaction]:
         """
