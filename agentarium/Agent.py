@@ -71,12 +71,15 @@ Bio: [Bio of the person]
         },
     }
 
-    _default_act_prompt = """
+    _default_self_introduction_prompt = """
 Informations about yourself:
 {agent_informations}
 
 Your interactions:
 {interactions}
+"""
+
+    _default_act_prompt = """{self_introduction}
 
 Given the above information, think about what you should do next.
 
@@ -127,6 +130,8 @@ Write in the following format:
             self.agent_informations["bio"] = Agent._generate_agent_bio(self.agent_informations)
 
         self._interaction_manager.register_agent(self)
+
+        self._self_introduction_prompt = deepcopy(Agent._default_self_introduction_prompt)
         self._act_prompt = deepcopy(Agent._default_act_prompt)
 
         self._actions = deepcopy(Agent._default_actions)
@@ -315,9 +320,13 @@ Write in the following format:
         # [TALK][AGENT_ID][CONTENT]: Talk to the agent with the given ID. Note that you must the agent ID, not the agent name. (i.e [TALK][123][Hello!])
         # [CHATGPT][CONTENT]: Use ChatGPT. (i.e [CHATGPT][Hello!])
 
-        prompt = self._act_prompt.format(
+        self_introduction = self._self_introduction_prompt.format(
             agent_informations=self.agent_informations,
             interactions=self.get_interactions(),
+        )
+
+        prompt = self._act_prompt.format(
+            self_introduction=self_introduction,
             actions="\n".join([f"{action['format']}: {action['prompt']} (i.e {action['example']})" for action in self._actions.values()]),
             list_of_actions=list(self._actions.keys()),
         )
@@ -438,6 +447,39 @@ Write in the following format:
             "receiver": self.agent_id,
             "message": message,
         }
+
+    def ask(self, message: str) -> None:
+        """
+        Ask the agent a question and receive a contextually aware response.
+
+        The agent considers its characteristics and interaction history when formulating
+        the response, maintaining consistency with its persona.
+
+        Note: The agent will not save the question nor the response in its interaction history.
+
+        Args:
+            message (str): The question to ask the agent.
+
+        Returns:
+            str: The agent's response to the question.
+        """
+
+        prompt = self._self_introduction_prompt.format(
+            agent_informations=self.agent_informations,
+            interactions=self.get_interactions(),
+        )
+
+        prompt += f"\nYou are asked the following question: {message}. Answer the question as best as you can."
+
+        response = llm_client.chat.completions.create(
+            model=f"{config.llm_provider}:{config.llm_model}",
+            messages=[
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+        )
+
+        return response.choices[0].message.content
 
     def add_new_action(self, action_descriptor: dict[str, str], action_function: Callable[[Agent, str], str | dict]) -> None:
         """
