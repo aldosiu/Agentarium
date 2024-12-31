@@ -184,6 +184,56 @@ Write in the following format:
         """
         return self.agent_informations["name"]
 
+    @property
+    def gender(self) -> str:
+        """
+        Get the agent's gender.
+
+        Returns:
+            str: The gender of the agent.
+        """
+        return self.agent_informations["gender"]
+
+    @property
+    def age(self) -> int:
+        """
+        Get the agent's age.
+
+        Returns:
+            int: The age of the agent.
+        """
+        return self.agent_informations["age"]
+
+    @property
+    def occupation(self) -> str:
+        """
+        Get the agent's occupation.
+
+        Returns:
+            str: The occupation of the agent.
+        """
+        return self.agent_informations["occupation"]
+
+    @property
+    def location(self) -> str:
+        """
+        Get the agent's location.
+
+        Returns:
+            str: The location of the agent.
+        """
+        return self.agent_informations["location"]
+
+    @property
+    def bio(self) -> str:
+        """
+        Get the agent's biography.
+
+        Returns:
+            str: The biography of the agent.
+        """
+        return self.agent_informations["bio"]
+
     @staticmethod
     def _generate_prompt_to_generate_bio(**kwargs) -> str:
         """
